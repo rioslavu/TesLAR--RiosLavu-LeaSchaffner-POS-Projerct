@@ -1,0 +1,221 @@
+@startuml tesla-refined
+
+' ================================================================
+' TESLA — Domain model
+' Association-valued attributes are shown as named relationships.
+' ================================================================
+
+!pragma layout smetana
+left to right direction
+
+hide empty members
+hide circle
+
+title <color:#E82127><b>TESLA</b></color>  |  Domain Model
+caption Ownership, vehicles, service and charging
+
+' ======================= Identity ===============================
+
+package "01 / Identity" #F8FAFC {
+  abstract class User <<Entity>> {
+    {field} id: Long (PK)
+    {field} firstName: FirstName (NN, RT[String], L[64])
+    {field} lastName: LastName (NN, RT[String], L[64])
+    {field} email: Email (NN, RT[String], L[128], REx[Email])
+  }
+
+  class Owner <<Entity>> {
+    {field} driversLicense: LicenseNumber (NN, RT[String], L[32])
+    {field} phone: PhoneNumber (RT[String], REx[E.164])
+  }
+
+  class Technician <<Entity>> {
+    {field} employeeNo: EmployeeNo (NN, RT[String], L[8])
+    {field} certifiedFor: Set<TeslaModel> (NN)
+  }
+
+  User <|-- Owner
+  User <|-- Technician
+}
+
+' ======================= Vehicles ===============================
+
+package "02 / Vehicles" #FFF8F8 {
+  class Vehicle <<Entity>> {
+    {field} id: Long (PK)
+    {field} vin: Vin (NN, RT[String], L[17], REx[VIN])
+    {field} licensePlate: LicensePlate (RT[String], L[12])
+    {field} model: TeslaModel (NN)
+    {field} firstRegistration: LocalDate
+    {field} mileage: Mileage (NN, RT[Integer], Min[0])
+    {field} softwareVersion: SwVersion (RT[String], REx[yyyy.ww.x])
+  }
+
+  class BatteryPack <<ValueObject>> {
+    {field} chemistry: BatteryChemistry (NN)
+    {field} capacity: EnergyKwh (NN, RT[Double], Min[0])
+    {field} stateOfHealth: Percentage (NN, RT[Integer], Range[0..100])
+  }
+
+  Vehicle "1" *-- "1" BatteryPack : battery
+}
+
+' ======================= Service ================================
+
+package "03 / Service" #F7FAFF {
+  class ServiceCenter <<Entity>> {
+    {field} id: Long (PK)
+    {field} name: CenterName (NN, RT[String], L[64])
+  }
+
+  class ServiceAppointment <<Entity>> {
+    {field} id: Long (PK)
+    {field} scheduledAt: LocalDateTime (NN)
+    {field} status: AppointmentStatus (NN)
+  }
+
+  class ServiceTask <<ValueObject>> {
+    {field} type: ServiceType (NN)
+    {field} description: Description (RT[String], L[512])
+    {field} laborTime: Duration
+  }
+
+  ServiceAppointment "1" *-- "1..*" ServiceTask : tasks {ordered}
+  ServiceAppointment "0..*" --> "1" ServiceCenter : serviceCenter
+}
+
+' ======================= Charging ===============================
+
+package "04 / Charging" #F6FBF8 {
+  class SuperchargerStation <<Entity>> {
+    {field} id: Long (PK)
+    {field} name: StationName (NN, RT[String], L[64])
+  }
+
+  class ChargingStall <<ValueObject>> {
+    {field} stallNo: StallNo (NN, RT[String], REx[\d{1,2}[A-D]])
+    {field} connector: ConnectorType (NN)
+    {field} maxPower: PowerKw (NN, RT[Integer], Range[1..500])
+  }
+
+  class ChargingSession <<Entity>> {
+    {field} id: Long (PK)
+    {field} stallNo: StallNo (NN)
+    {field} startTS: LocalDateTime (NN)
+    {field} endTS: LocalDateTime
+    {field} energyCharged: EnergyKwh (NN)
+  }
+
+  SuperchargerStation "1" *-- "1..*" ChargingStall : stalls {ordered}
+  ChargingSession "0..*" --> "1" SuperchargerStation : station
+}
+
+' ======================= Shared types ===========================
+
+package "05 / Shared Value Objects" #FAFAFC {
+  class Address <<ValueObject>> {
+    {field} streetNameNumber: String (NN, RT[String], L[128])
+    {field} zipCode: String (NN, RT[String], L[10])
+    {field} city: String (NN, RT[String], L[64])
+    {field} country: CountryCode (NN, RT[String], L[2], ISO-3166)
+  }
+
+  class GeoCoordinate <<ValueObject>> {
+    {field} latitude: Latitude (NN, RT[Double], Range[-90..90])
+    {field} longitude: Longitude (NN, RT[Double], Range[-180..180])
+  }
+
+  class Money <<ValueObject>> {
+    {field} amount: Amount (NN, RT[BigDecimal], Min[0])
+    {field} currency: Currency (NN)
+  }
+}
+
+' ======================= Enumerations ===========================
+
+package "06 / Enumerations" #FAFAFA {
+  ' Original enum values retained; type name aligned with its usages.
+  enum TeslaModel {
+    MODEL_S
+    MODEL_L
+    MODEL_R
+    MODEL_Lpromax
+  }
+
+  enum BatteryChemistry {
+    NCA
+    NMC
+    LFP
+  }
+
+  enum AppointmentStatus {
+    REQUESTED
+    CONFIRMED
+    IN_PROGRESS
+    COMPLETED
+    CANCELLED
+  }
+
+  enum ServiceType {
+    INSPECTION
+    TIRE_CHANGE
+    BRAKE_SERVICE
+    BATTERY_CHECK
+    SOFTWARE_UPDATE
+    REPAIR
+  }
+
+  enum ConnectorType {
+    CCS2
+    NACS
+    TYPE2
+  }
+
+  enum Currency {
+    EUR
+    USD
+    CHF
+  }
+
+  ' Layout hints only; these do not represent domain relationships.
+  TeslaModel -[hidden]right- BatteryChemistry
+  BatteryChemistry -[hidden]right- AppointmentStatus
+  AppointmentStatus -[hidden]right- ServiceType
+  ServiceType -[hidden]right- ConnectorType
+  ConnectorType -[hidden]right- Currency
+}
+
+' ======================= Associations ===========================
+
+Vehicle "0..*" --> "1" Owner : owner
+Technician "0..*" --> "1" ServiceCenter : worksAt
+
+ServiceAppointment "0..*" --> "1" Vehicle : vehicle
+ServiceAppointment "0..*" --> "0..1" Technician : technician
+
+ChargingSession "0..*" --> "1" Vehicle : vehicle
+
+' Named compositions replace duplicate association-valued fields.
+' No shared-owner multiplicity is implied for reusable value types.
+Owner *-- "1" Address : homeAddress
+ServiceCenter *-- "1" Address : address
+SuperchargerStation *-- "1" Address : address
+SuperchargerStation *-- "1" GeoCoordinate : location
+
+ServiceTask *-- "1" Money : price
+ChargingSession *-- "0..1" Money : totalCost
+SuperchargerStation *-- "1" Money : pricePerKwh
+
+' Keep enum definitions beside the connected domain model.
+Money -[hidden]down- TeslaModel
+
+legend bottom left
+  <b>Notation</b>
+  PK = primary key   |   NN = required   |   RT[T] = underlying type
+  L[n] = maximum length   |   REx[p] = pattern   |   Min[n] = minimum
+  Range[a..b] = inclusive range   |   * = many   |   {ordered} = ordered collection
+  Named relationships represent attributes; end multiplicities define cardinality.
+  Scalar attributes without NN are optional. Enum types are referenced in attributes.
+endlegend
+
+@enduml
